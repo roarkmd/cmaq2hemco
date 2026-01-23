@@ -17,7 +17,7 @@ def writeconfig(outpath, year, sector, filepatt, cq2gc):
         if os.path.exists(hcpath):
             break
     else:
-        raise IOError('file not found')
+        raise IOError(f'File not found: {hcpath}')
 
     with open(outpath, 'w') as hcf:
         print(sector, hcpatt, end='', flush=True)
