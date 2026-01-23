@@ -29,7 +29,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        "pyproj", "pandas", "xarray", "requests", "cmaqsatproc", "netcdf4"
+        "pyproj", "pandas", "xarray", "requests", "cmaqsatproc", "netcdf4", "scipy",
     ],
     extras_require={
         'aws': [
