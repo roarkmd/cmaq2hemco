@@ -524,7 +524,7 @@ def gd2matrix(gf, elat, elon):
     return ol.set_index(['ROW', 'COL', 'lati', 'loni'])
 
 
-def gd2hemco_fast(path, gf, elat, elon, verbose=0):
+def gd2hemco_fast(path, gf, elat, elon, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
     """
     Bilinear interpolation of fluxes (w/ MSFX2 factor)
 
@@ -540,6 +540,10 @@ def gd2hemco_fast(path, gf, elat, elon, verbose=0):
         Edge longitudes for regular grid
     verbose : int
         Level of verbosity
+    gc : str
+        Name of gas-phase chemical mechanism. Used in getmw only.
+    nr : str
+        Name of non-reactive gas-phase mechanism (typically haps). Used in getmw on
 
     Arguments
     ---------
@@ -579,14 +583,14 @@ def gd2hemco_fast(path, gf, elat, elon, verbose=0):
         tmp = (gf[dk] / qarea).interp(ROW=Y, COL=X)
         attrs = {k: v for k, v in gf[dk].attrs.items()}
         unit = attrs['units'].strip() + '/m**2'
-        tmp, unit = unitconvert(dk, tmp, unit=unit)
+        tmp, unit = unitconvert(dk, tmp, unit=unit, gc=gc, nr=nr)
         attrs['units'] = unit
         outf.addvar(dk, tmp.data, **attrs)
 
     return outf
 
 
-def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0):
+def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
     """
     Uses a fractional aera overlap interoplation.
 
@@ -604,6 +608,10 @@ def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0):
         fraction from row/col centroids to lat/lon centroids
     verbose : int
         Level of verbosity
+    gc : str
+        Name of gas-phase chemical mechanism. Used in getmw only.
+    nr : str
+        Name of non-reactive gas-phase mechanism (typically haps). Used in getmw on
 
     Arguments
     ---------
@@ -694,14 +702,14 @@ def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0):
         loni = gval.index.get_level_values('loni')
         tmp[ti, ki, lati, loni] += gval
         attrs = {k: v for k, v in gf[dk].attrs.items()}
-        tmp, unit = unitconvert(dk, tmp, attrs['units'], area=area)
+        tmp, unit = unitconvert(dk, tmp, attrs['units'], area=area, gc=gc, nr=nr)
         attrs['units'] = unit
         outf.addvar(dk, tmp, **attrs)
 
     return outf
 
 
-def unitconvert(key, val, unit, area=None, inplace=True):
+def unitconvert(key, val, unit, area=None, inplace=True, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
     """
     Arguments
     ---------
@@ -720,6 +728,11 @@ def unitconvert(key, val, unit, area=None, inplace=True):
     inplace : bool
         If True, do the unit conversion within the val array without allocating
         additional memory
+    gc : str
+        Name of gas-phase chemical mechanism. Used in getmw only.
+    nr : str
+        Name of non-reactive gas-phase mechanism (typically haps). Used in getmw only.
+
 
     Returns
     -------
@@ -741,7 +754,7 @@ def unitconvert(key, val, unit, area=None, inplace=True):
         outunit.append('kg')
     elif unit in nps:
         try:
-            mw = getmw(key)
+            mw = getmw(key, gc=gc, nr=nr)
             factor *= mw
             outunit.append('kg')
         except KeyError as e:
