@@ -1,6 +1,6 @@
 __all__ = [
     'plumerise_briggs', 'open_date', 'gd2hemco', 'pt2hemco', 'pt2gd', 'merge',
-    'to_ioapi', 'getmw', 'se_file', 'gd2matrix', 'gd2hemco_fast',
+    'to_ioapi', 'getmw', 'se_file', 'gd2matrix', 'gd2hemco_fast', 'gd2hemco_fast_3D', 
     'unitconvert', 'hemco_area', 'symlinks', 'gd_file', 'open_file',
 ]
 
@@ -558,11 +558,13 @@ def gd2hemco_fast(path, gf, elat, elon, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5h
     )
     clat = (elat[1:] + elat[:-1]) / 2
     clon = (elon[1:] + elon[:-1]) / 2
-    clev = _deflevs[:1]
+    clev = _deflevs[:1] #should be changed for all layers for 3D files
+    # Datakeys are pollutant variables
     datakeys = [
         k for k in gf
         if k not in ('TFLAG', 'ti', 'ki', 'ri', 'ci', 'lon', 'lat')
     ]
+    
     outf = hemcofile(
         path, gf.time, clat, clon, lev=clev, varkeys=datakeys, attrs=gf.attrs
     )
@@ -708,6 +710,117 @@ def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0, gc='cb6r5_ae7_aq', nr
 
     return outf
 
+def gd2hemco_fast_3D(path, gf, elat, elon, lev=None, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+    """
+    Bilinear interpolation of fluxes to a regular lat/lon grid, preserving
+    multiple vertical layers.
+
+    Arguments
+    ---------
+    path : str
+        Path to save the HEMCO file.
+    gf : xarray.Dataset
+        Gridded emissions (projected), typically with dims ('time','LAY','ROW','COL')
+        and having 'lon'/'lat' (in degrees) for the input grid and a 'crs' attribute.
+    elat : array-like
+        Edge latitudes for the destination regular grid (degrees_north).
+    elon : array-like
+        Edge longitudes for the destination regular grid (degrees_east).
+    gc : str
+        Name of gas-phase chemical mechanism. Used in getmw only.
+    nr : str
+        Name of non-reactive gas-phase mechanism (typically haps). Used in getmw on
+    lev : array-like or None
+        Vertical level coordinates to write to HEMCO. If None, uses _deflevs
+        truncated to the number of layers in gf (LAY).
+    verbose : int
+        Level of verbosity.
+
+    Returns
+    -------
+    outf : hemcofile
+        HEMCO file object (with .nc property).
+    """
+    import pyproj
+    import numpy as np
+    import xarray as xr
+
+    # Projected-area correction to convert totals to flux per m2
+    proj = pyproj.Proj(gf.crs)
+    # areal_scale converts projected areas to true (on-sphere) areas
+    scale = proj.get_factors(gf['lon'], gf['lat']).areal_scale
+    qarea = gf.XCELL * gf.YCELL / scale  # shape (ROW, COL)
+
+    # Destination grid centers
+    clat = (elat[1:] + elat[:-1]) / 2
+    clon = (elon[1:] + elon[:-1]) / 2
+
+    # Number of vertical layers (from input), and HEMCO levs to write
+    nk = gf.sizes['LAY'] if 'LAY' in gf.dims else 1
+    if lev is None:
+        clev = _deflevs[:nk]
+    else:
+        clev = np.asarray(lev)
+        nk = clev.size
+
+    # Variables to write (exclude helpers and coords)
+    datakeys = [
+        k for k in gf
+        if k not in ('TFLAG', 'ti', 'ki', 'ri', 'ci', 'lon', 'lat')
+    ]
+
+    # Initialize output file
+    outf = hemcofile(
+        path, gf.time, clat, clon, lev=clev, varkeys=datakeys, attrs=gf.attrs
+    )
+
+    # Add destination cell areas
+    area = hemco_area(elat, elon)
+    outf.addvar('AREA', area, units='m2', dims=('lat', 'lon'))
+
+    # Build target coordinates in projected space for bilinear interpolation
+    LON, LAT = np.meshgrid(clon, clat)          # destination centers (deg)
+    X, Y = proj(LON, LAT)                       # destination centers in proj
+    X = xr.DataArray(X, dims=('ROW', 'COL'))    # use ROW/COL names for interp
+    Y = xr.DataArray(Y, dims=('ROW', 'COL'))
+
+    # Prepare area factor as DataArray for safe broadcasting
+    qarea_da = xr.DataArray(qarea, dims=('ROW', 'COL'))
+
+    for dk in datakeys:
+        dtot = float(gf[dk].sum())
+        if dtot == 0:
+            if verbose > 0:
+                print(f'excluded {dk} (zero total)')
+            continue
+        if verbose > 0:
+            print(dk)
+
+        da = gf[dk]
+        # Ensure we have a LAY dimension for consistency
+        if 'LAY' not in da.dims:
+            da = da.expand_dims(LAY=[0])
+
+        # Convert totals to flux per m^2 in the source grid (account MSFX2/area scaling)
+        flux = (da / qarea_da)
+
+        # Bilinear interpolation to destination lat/lon grid for every time, layer
+        interp_flux = flux.interp(ROW=Y, COL=X)
+
+        # Order to match HEMCO expected (time, lev, lat, lon)
+        interp_flux = interp_flux.transpose('time', 'LAY', 'ROW', 'COL')
+
+        # Units: append /m**2 before converting so unitconvert won't divide by area again
+        attrs = {k: v for k, v in gf[dk].attrs.items()}
+        unit = attrs.get('units', 'unknown').strip()
+        unit = unit + '/m**2'
+        interp_flux, unit = unitconvert(dk, interp_flux, unit=unit, gc=gc, nr=nr)
+        attrs['units'] = unit
+
+        # Write with explicit dims to match the 4D variable shape
+        outf.addvar(dk, interp_flux.data, dims=('time', 'lev', 'lat', 'lon'), **attrs)
+
+    return outf
 
 def unitconvert(key, val, unit, area=None, inplace=True, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
     """
@@ -1232,7 +1345,7 @@ def symlinks(tmpl, dates, datetype=None, verbose=0):
     return links
 
 
-def gd_file(ef):
+def gd_file(ef, mode=None):
     """
     Add lon/lat and rename TSTEP as time.
 
@@ -1241,6 +1354,12 @@ def gd_file(ef):
     ef : xarray.Dataset
         ef must have the crs attribute and TSTEP coordinate variable
 
+    Optional Arguments
+    -------
+    mode : None or "3D"
+        Used for files that have vertical layers. "3D" keeps all layers.
+        By default leyers are dropped.
+
     Returns
     -------
     gf : xarray.Dataset
@@ -1248,9 +1367,12 @@ def gd_file(ef):
         removed.
     """
     import pyproj
-    ef = ef.isel(
-        LAY=0, drop=True
-    ).rename(TSTEP='time')
+    if mode == '3D':
+        ef = ef.rename(TSTEP='time')
+    else:
+        ef = ef.isel(
+            LAY=0, drop=True
+        ).rename(TSTEP='time')
     proj = pyproj.Proj(ef.crs)
     Y, X = xr.broadcast(ef.ROW, ef.COL)
     LON, LAT = proj(X, Y, inverse=True)
