@@ -1,7 +1,7 @@
 __all__ = [
     'plumerise_briggs', 'open_date', 'gd2hemco', 'pt2hemco', 'pt2gd', 'merge',
     'to_ioapi', 'getmw', 'se_file', 'gd2matrix', 'gd2hemco_fast', 'gd2hemco_fast_3D', 
-    'unitconvert', 'hemco_area', 'symlinks', 'gd_file', 'open_file',
+    'unitconvert', 'hemco_area', 'symlinks', 'gd_file', 'open_gdfile', 'open_sefile',
 ]
 
 import numpy as np
@@ -227,8 +227,8 @@ def plumerise_briggs(
 
     return dzbriggs
 
-def open_file(
-    date, tmpl
+def open_gdfile(
+    date, tmpl, engine='scipy'
 ):
     """
     Open all files for specific date
@@ -255,13 +255,46 @@ def open_file(
     path = date.strftime(tmpl)
     if path.endswith('.gz'):
         bdy = io.BytesIO(gzip.open(path).read())
-        f = csp.open_ioapi(bdy, engine='scipy')
+        f = csp.open_ioapi(bdy, engine=engine)
     else:
-        f = csp.open_ioapi(path, engine='scipy')
+        f = csp.open_ioapi(path, engine=engine)
     return f
 
+def open_sefile(
+    date, stack_groups_tmpl, inln_tmpl, engine='scipy'
+):
+    """
+    Open all files for specific date
+
+    Arguments
+    ---------
+    date : str
+        Date parsable by pandas.to_datetime
+    stack_groups_tmpl : str
+        strftime template for date file
+        (e.g., MCIP/12US1/GRIDCRO2D.12US1.35L.%y%m%d)
+    inln_tmpl : str
+        strftime template for date file
+        (e.g., MCIP/12US1/GRIDCRO2D.12US1.35L.%y%m%d)
+
+    Returns
+    -------
+    ds : xarray.Dataset
+        File opened (either in memory or from disk)
+    """
+    import pandas as pd
+    import cmaqsatproc as csp
+    date = pd.to_datetime(date)
+    stack_groups_path = date.strftime(stack_groups_tmpl)
+    inln_path = date.strftime(inln_tmpl)
+    sf = csp.open_ioapi(stack_groups_path, engine=engine)
+    ef = csp.open_ioapi(inln_path, engine=engine).isel(LAY=0, COL=0, drop=True)
+    ef = se_file(sf, ef)
+    return ef
+
+
 def open_date(
-    date, tmpl, bucket, cache=True
+    date, tmpl, bucket, cache=True, engine='scipy'
 ):
     """
     Open all files for specific date
@@ -307,7 +340,7 @@ def open_date(
 
         if dest.endswith('.gz'):
             bdy = io.BytesIO(gzip.open(dest).read())
-            f = csp.open_ioapi(bdy, engine='scipy')
+            f = csp.open_ioapi(bdy, engine=engine)
         else:
             f = csp.open_ioapi(dest)
     else:
@@ -320,7 +353,7 @@ def open_date(
         if path.endswith('.gz'):
             bdy = gzip.decompress()
         bdy = io.BytesIO(bdy)
-        f = csp.open_ioapi(bdy, engine='scipy')
+        f = csp.open_ioapi(bdy, engine=engine)
     return f
 
 
