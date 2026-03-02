@@ -68,7 +68,7 @@ _timeattrs = dict(
 )
 
 
-def getmw(key, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+def getmw(key, gc=None, nr=None):
     """
     Get the molecular weight (kg/mol) for a chemical mechanism species. The
     species may be an explicit or lumped species, so weights are mechanism
@@ -359,7 +359,7 @@ def open_date(
 
 def pt2hemco(
     path, pf, elat, elon, ez=None, nk=11, temp_a=288.15, pres_a=101325, u=2.5,
-    verbose=0
+    verbose=0, gc=None, nr=None
 ):
     """
     Convert a point source file to a hemco-ready file
@@ -478,7 +478,7 @@ def pt2hemco(
         tmp[vals.ti, vals.ki, vals.ri, vals.ci] = vals[dk].values
         attrs = {k: v for k, v in pf[dk].attrs.items()}
         unit = attrs['units'].strip()
-        tmp, unit = unitconvert(dk, tmp, unit, area=area)
+        tmp, unit = unitconvert(dk, tmp, unit, area=area, gc=gc, nr=nr)
         attrs['units'] = unit
         outf.addvar(dk, tmp, **attrs)
 
@@ -557,7 +557,7 @@ def gd2matrix(gf, elat, elon):
     return ol.set_index(['ROW', 'COL', 'lati', 'loni'])
 
 
-def gd2hemco_fast(path, gf, elat, elon, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+def gd2hemco_fast(path, gf, elat, elon, verbose=0, gc=None, nr=None):
     """
     Bilinear interpolation of fluxes (w/ MSFX2 factor)
 
@@ -625,7 +625,7 @@ def gd2hemco_fast(path, gf, elat, elon, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5h
     return outf
 
 
-def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0, gc=None, nr=None):
     """
     Uses a fractional aera overlap interoplation.
 
@@ -743,7 +743,7 @@ def gd2hemco(path, gf, elat, elon, matrix=None, verbose=0, gc='cb6r5_ae7_aq', nr
 
     return outf
 
-def gd2hemco_fast_3D(path, gf, elat, elon, lev=None, verbose=0, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+def gd2hemco_fast_3D(path, gf, elat, elon, lev=None, verbose=0, gc=None, nr=None):
     """
     Bilinear interpolation of fluxes to a regular lat/lon grid, preserving
     multiple vertical layers.
@@ -855,7 +855,7 @@ def gd2hemco_fast_3D(path, gf, elat, elon, lev=None, verbose=0, gc='cb6r5_ae7_aq
 
     return outf
 
-def unitconvert(key, val, unit, area=None, inplace=True, gc='cb6r5_ae7_aq', nr='cb6r5hap_ae7_aq'):
+def unitconvert(key, val, unit, area=None, inplace=True, gc=None, nr=None):
     """
     Arguments
     ---------
